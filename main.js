@@ -32,8 +32,10 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     super(...arguments);
     this.enabled = false;
     this.activeLeaf = null;
+    this.styleEl = null;
   }
   async onload() {
+    this.ensureStyles();
     this.addCommand({
       id: "toggle-focus-mode",
       name: "Toggle focus mode",
@@ -61,6 +63,8 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
   }
   onunload() {
     this.clearFocusMode();
+    this.styleEl?.remove();
+    this.styleEl = null;
   }
   toggleFocusMode() {
     if (this.enabled) {
@@ -161,5 +165,19 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     body.querySelectorAll(`.${SHOW_CLASS}`).forEach((element) => {
       element.classList.remove(SHOW_CLASS);
     });
+  }
+  ensureStyles() {
+    if (this.styleEl?.isConnected) {
+      return;
+    }
+    const styleEl = document.createElement("style");
+    styleEl.id = "focus-mode-plugin-styles";
+    styleEl.textContent = `
+      .${HIDE_CLASS} {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
+    this.styleEl = styleEl;
   }
 };

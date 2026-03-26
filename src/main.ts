@@ -7,8 +7,11 @@ const ROOT_CLASS = "focus-mode-active";
 export default class FocusModePlugin extends Plugin {
   private enabled = false;
   private activeLeaf: WorkspaceLeaf | null = null;
+  private styleEl: HTMLStyleElement | null = null;
 
   async onload(): Promise<void> {
+    this.ensureStyles();
+
     this.addCommand({
       id: "toggle-focus-mode",
       name: "Toggle focus mode",
@@ -41,6 +44,8 @@ export default class FocusModePlugin extends Plugin {
 
   onunload(): void {
     this.clearFocusMode();
+    this.styleEl?.remove();
+    this.styleEl = null;
   }
 
   private toggleFocusMode(): void {
@@ -168,5 +173,22 @@ export default class FocusModePlugin extends Plugin {
     body.querySelectorAll(`.${SHOW_CLASS}`).forEach((element) => {
       element.classList.remove(SHOW_CLASS);
     });
+  }
+
+  private ensureStyles(): void {
+    if (this.styleEl?.isConnected) {
+      return;
+    }
+
+    const styleEl = document.createElement("style");
+    styleEl.id = "focus-mode-plugin-styles";
+    styleEl.textContent = `
+      .${HIDE_CLASS} {
+        display: none !important;
+      }
+    `;
+
+    document.head.appendChild(styleEl);
+    this.styleEl = styleEl;
   }
 }
