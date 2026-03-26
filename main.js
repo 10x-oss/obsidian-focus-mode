@@ -26,13 +26,14 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var HIDE_CLASS = "focus-mode-hidden";
 var SHOW_CLASS = "focus-mode-visible";
-var ROOT_CLASS = "focus-mode-active";
 var FocusModePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
     this.enabled = false;
     this.activeLeaf = null;
     this.styleEl = null;
+    this.activeContentEl = null;
+    this.activeDocument = null;
   }
   async onload() {
     this.ensureStyles();
@@ -105,41 +106,77 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     return this.app.workspace.activeLeaf ?? null;
   }
   applyFocusMode(leaf) {
-    const { containerEl } = leaf.view;
-    const body = containerEl.ownerDocument.body;
-    const leafEl = containerEl.closest(".workspace-leaf");
-    if (!(leafEl instanceof HTMLElement)) {
+    const contentEl = this.getContentElement(leaf);
+    if (!(contentEl instanceof HTMLElement)) {
       return false;
     }
-    const root = body.querySelector(".workspace");
-    if (!(root instanceof HTMLElement)) {
-      return false;
-    }
-    body.classList.add(ROOT_CLASS);
-    leafEl.classList.add(SHOW_CLASS);
-    let current = leafEl;
-    while (current) {
+    const ownerDocument = contentEl.ownerDocument;
+    const body = ownerDocument.body;
+    this.activeContentEl = contentEl;
+    this.activeDocument = ownerDocument;
+    contentEl.style.marginTop = "0px";
+    let current = contentEl;
+    let split = contentEl;
+    while (split && !split.classList.contains("workspace-split")) {
       current.classList.add(SHOW_CLASS);
-      current = current.parentElement?.closest(".workspace-split, .workspace-tabs, .mod-root") ?? null;
+      current = split;
+      split = split.parentElement;
     }
-    this.hideSelectors(body, [
-      ".workspace-ribbon",
-      ".mobile-navbar",
-      ".status-bar",
-      ".titlebar",
-      ".view-header",
-      ".workspace-tab-header-container",
-      ".workspace-sidedock-vault-profile",
-      ".sidebar-toggle-button"
-    ]);
-    body.querySelectorAll(".workspace-leaf, .workspace-tabs, .workspace-split, .mod-root").forEach((element) => {
+    if (current) {
+      current.classList.add(SHOW_CLASS);
+      current.querySelectorAll(`div.workspace-split:not(.${SHOW_CLASS})`).forEach((element) => {
+        if (element instanceof HTMLElement && element !== current) {
+          element.classList.add(SHOW_CLASS);
+        }
+      });
+      current.querySelector(`div.workspace-leaf-content.${SHOW_CLASS} > .view-header`)?.classList.add(SHOW_CLASS);
+      current.querySelectorAll(`div.workspace-tab-container.${SHOW_CLASS} > div.workspace-leaf:not(.${SHOW_CLASS})`).forEach((element) => {
+        if (element instanceof HTMLElement) {
+          element.classList.add(SHOW_CLASS);
+        }
+      });
+      current.querySelectorAll(`div.workspace-tabs.${SHOW_CLASS} > div.workspace-tab-header-container`).forEach((element) => {
+        if (element instanceof HTMLElement) {
+          element.classList.add(SHOW_CLASS);
+        }
+      });
+      current.querySelectorAll(`div.workspace-split.${SHOW_CLASS} > div.workspace-tabs:not(.${SHOW_CLASS})`).forEach((element) => {
+        if (element instanceof HTMLElement) {
+          element.classList.add(SHOW_CLASS);
+        }
+      });
+    }
+    body.querySelectorAll(`div.workspace-split:not(.${SHOW_CLASS})`).forEach((element) => {
       if (!(element instanceof HTMLElement)) {
         return;
       }
-      if (!element.classList.contains(SHOW_CLASS)) {
+      if (element !== split) {
+        element.classList.add(HIDE_CLASS);
+      } else {
+        element.classList.add(SHOW_CLASS);
+      }
+    });
+    body.querySelector(`div.workspace-leaf-content.${SHOW_CLASS} > .view-header`)?.classList.add(HIDE_CLASS);
+    body.querySelectorAll(`div.workspace-tab-container.${SHOW_CLASS} > div.workspace-leaf:not(.${SHOW_CLASS})`).forEach((element) => {
+      if (element instanceof HTMLElement) {
         element.classList.add(HIDE_CLASS);
       }
     });
+    body.querySelectorAll(`div.workspace-tabs.${SHOW_CLASS} > div.workspace-tab-header-container`).forEach((element) => {
+      if (element instanceof HTMLElement) {
+        element.classList.add(HIDE_CLASS);
+      }
+    });
+    body.querySelectorAll(`div.workspace-split.${SHOW_CLASS} > div.workspace-tabs:not(.${SHOW_CLASS})`).forEach((element) => {
+      if (element instanceof HTMLElement) {
+        element.classList.add(HIDE_CLASS);
+      }
+    });
+    this.hideSelectors(body, ["div.workspace-ribbon", "div.mobile-navbar", "div.status-bar", "div.titlebar"]);
+    const mobileRoot = body.querySelector(".is-mobile .workspace > .mod-root");
+    if (mobileRoot instanceof HTMLElement) {
+      mobileRoot.style.paddingTop = "0px";
+    }
     return true;
   }
   hideSelectors(root, selectors) {
@@ -157,14 +194,23 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     this.clearMarkedElements();
   }
   clearMarkedElements() {
-    const body = document.body;
-    body.classList.remove(ROOT_CLASS);
+    const ownerDocument = this.activeDocument ?? document;
+    const body = ownerDocument.body;
     body.querySelectorAll(`.${HIDE_CLASS}`).forEach((element) => {
       element.classList.remove(HIDE_CLASS);
     });
     body.querySelectorAll(`.${SHOW_CLASS}`).forEach((element) => {
       element.classList.remove(SHOW_CLASS);
     });
+    const mobileRoot = body.querySelector(".is-mobile .workspace > .mod-root");
+    if (mobileRoot instanceof HTMLElement) {
+      mobileRoot.style.paddingTop = "";
+    }
+    if (this.activeContentEl) {
+      this.activeContentEl.style.marginTop = "";
+    }
+    this.activeContentEl = null;
+    this.activeDocument = null;
   }
   ensureStyles() {
     if (this.styleEl?.isConnected) {
@@ -179,5 +225,16 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     `;
     document.head.appendChild(styleEl);
     this.styleEl = styleEl;
+  }
+  getContentElement(leaf) {
+    const view = leaf.view;
+    if (view.contentEl instanceof HTMLElement) {
+      return view.contentEl;
+    }
+    const fallback = view.containerEl.querySelector(".workspace-leaf-content");
+    if (fallback instanceof HTMLElement) {
+      return fallback;
+    }
+    return view.containerEl;
   }
 };

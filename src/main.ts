@@ -2,12 +2,13 @@ import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
 
 const HIDE_CLASS = "focus-mode-hidden";
 const SHOW_CLASS = "focus-mode-visible";
-const ROOT_CLASS = "focus-mode-active";
 
 export default class FocusModePlugin extends Plugin {
   private enabled = false;
   private activeLeaf: WorkspaceLeaf | null = null;
   private styleEl: HTMLStyleElement | null = null;
+  private activeContentEl: HTMLElement | null = null;
+  private activeDocument: Document | null = null;
 
   async onload(): Promise<void> {
     this.ensureStyles();
@@ -99,50 +100,109 @@ export default class FocusModePlugin extends Plugin {
   }
 
   private applyFocusMode(leaf: WorkspaceLeaf): boolean {
-    const { containerEl } = leaf.view;
-    const body = containerEl.ownerDocument.body;
-    const leafEl = containerEl.closest(".workspace-leaf");
+    const contentEl = this.getContentElement(leaf);
 
-    if (!(leafEl instanceof HTMLElement)) {
+    if (!(contentEl instanceof HTMLElement)) {
       return false;
     }
 
-    const root = body.querySelector(".workspace");
+    const ownerDocument = contentEl.ownerDocument;
+    const body = ownerDocument.body;
 
-    if (!(root instanceof HTMLElement)) {
-      return false;
-    }
+    this.activeContentEl = contentEl;
+    this.activeDocument = ownerDocument;
+    contentEl.style.marginTop = "0px";
 
-    body.classList.add(ROOT_CLASS);
-    leafEl.classList.add(SHOW_CLASS);
+    let current: HTMLElement | null = contentEl;
+    let split: HTMLElement | null = contentEl;
 
-    let current: HTMLElement | null = leafEl;
-
-    while (current) {
+    while (split && !split.classList.contains("workspace-split")) {
       current.classList.add(SHOW_CLASS);
-      current = current.parentElement?.closest(".workspace-split, .workspace-tabs, .mod-root") ?? null;
+      current = split;
+      split = split.parentElement;
     }
 
-    this.hideSelectors(body, [
-      ".workspace-ribbon",
-      ".mobile-navbar",
-      ".status-bar",
-      ".titlebar",
-      ".view-header",
-      ".workspace-tab-header-container",
-      ".workspace-sidedock-vault-profile",
-      ".sidebar-toggle-button",
-    ]);
+    if (current) {
+      current.classList.add(SHOW_CLASS);
+      current
+        .querySelectorAll(`div.workspace-split:not(.${SHOW_CLASS})`)
+        .forEach((element) => {
+          if (element instanceof HTMLElement && element !== current) {
+            element.classList.add(SHOW_CLASS);
+          }
+        });
+      current
+        .querySelector(`div.workspace-leaf-content.${SHOW_CLASS} > .view-header`)
+        ?.classList.add(SHOW_CLASS);
+      current
+        .querySelectorAll(`div.workspace-tab-container.${SHOW_CLASS} > div.workspace-leaf:not(.${SHOW_CLASS})`)
+        .forEach((element) => {
+          if (element instanceof HTMLElement) {
+            element.classList.add(SHOW_CLASS);
+          }
+        });
+      current
+        .querySelectorAll(`div.workspace-tabs.${SHOW_CLASS} > div.workspace-tab-header-container`)
+        .forEach((element) => {
+          if (element instanceof HTMLElement) {
+            element.classList.add(SHOW_CLASS);
+          }
+        });
+      current
+        .querySelectorAll(`div.workspace-split.${SHOW_CLASS} > div.workspace-tabs:not(.${SHOW_CLASS})`)
+        .forEach((element) => {
+          if (element instanceof HTMLElement) {
+            element.classList.add(SHOW_CLASS);
+          }
+        });
+    }
 
-    body.querySelectorAll(".workspace-leaf, .workspace-tabs, .workspace-split, .mod-root").forEach((element) => {
-      if (!(element instanceof HTMLElement)) {
-        return;
-      }
+    body
+      .querySelectorAll(`div.workspace-split:not(.${SHOW_CLASS})`)
+      .forEach((element) => {
+        if (!(element instanceof HTMLElement)) {
+          return;
+        }
 
-      if (!element.classList.contains(SHOW_CLASS)) {
-        element.classList.add(HIDE_CLASS);
-      }
-    });
+        if (element !== split) {
+          element.classList.add(HIDE_CLASS);
+        } else {
+          element.classList.add(SHOW_CLASS);
+        }
+      });
+
+    body
+      .querySelector(`div.workspace-leaf-content.${SHOW_CLASS} > .view-header`)
+      ?.classList.add(HIDE_CLASS);
+    body
+      .querySelectorAll(`div.workspace-tab-container.${SHOW_CLASS} > div.workspace-leaf:not(.${SHOW_CLASS})`)
+      .forEach((element) => {
+        if (element instanceof HTMLElement) {
+          element.classList.add(HIDE_CLASS);
+        }
+      });
+    body
+      .querySelectorAll(`div.workspace-tabs.${SHOW_CLASS} > div.workspace-tab-header-container`)
+      .forEach((element) => {
+        if (element instanceof HTMLElement) {
+          element.classList.add(HIDE_CLASS);
+        }
+      });
+    body
+      .querySelectorAll(`div.workspace-split.${SHOW_CLASS} > div.workspace-tabs:not(.${SHOW_CLASS})`)
+      .forEach((element) => {
+        if (element instanceof HTMLElement) {
+          element.classList.add(HIDE_CLASS);
+        }
+      });
+
+    this.hideSelectors(body, ["div.workspace-ribbon", "div.mobile-navbar", "div.status-bar", "div.titlebar"]);
+
+    const mobileRoot = body.querySelector(".is-mobile .workspace > .mod-root");
+
+    if (mobileRoot instanceof HTMLElement) {
+      mobileRoot.style.paddingTop = "0px";
+    }
 
     return true;
   }
@@ -164,15 +224,28 @@ export default class FocusModePlugin extends Plugin {
   }
 
   private clearMarkedElements(): void {
-    const body = document.body;
+    const ownerDocument = this.activeDocument ?? document;
+    const body = ownerDocument.body;
 
-    body.classList.remove(ROOT_CLASS);
     body.querySelectorAll(`.${HIDE_CLASS}`).forEach((element) => {
       element.classList.remove(HIDE_CLASS);
     });
     body.querySelectorAll(`.${SHOW_CLASS}`).forEach((element) => {
       element.classList.remove(SHOW_CLASS);
     });
+
+    const mobileRoot = body.querySelector(".is-mobile .workspace > .mod-root");
+
+    if (mobileRoot instanceof HTMLElement) {
+      mobileRoot.style.paddingTop = "";
+    }
+
+    if (this.activeContentEl) {
+      this.activeContentEl.style.marginTop = "";
+    }
+
+    this.activeContentEl = null;
+    this.activeDocument = null;
   }
 
   private ensureStyles(): void {
@@ -190,5 +263,23 @@ export default class FocusModePlugin extends Plugin {
 
     document.head.appendChild(styleEl);
     this.styleEl = styleEl;
+  }
+
+  private getContentElement(leaf: WorkspaceLeaf): HTMLElement | null {
+    const view = leaf.view as WorkspaceLeaf["view"] & {
+      contentEl?: HTMLElement;
+    };
+
+    if (view.contentEl instanceof HTMLElement) {
+      return view.contentEl;
+    }
+
+    const fallback = view.containerEl.querySelector(".workspace-leaf-content");
+
+    if (fallback instanceof HTMLElement) {
+      return fallback;
+    }
+
+    return view.containerEl;
   }
 }
