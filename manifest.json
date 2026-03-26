@@ -1,0 +1,10 @@
+{
+  "id": "focus-mode",
+  "name": "Focus Mode",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Toggle a distraction-free focus mode for the active pane from anywhere in Obsidian.",
+  "author": "10x",
+  "authorUrl": "https://github.com/10x-oss",
+  "isDesktopOnly": false
+}
