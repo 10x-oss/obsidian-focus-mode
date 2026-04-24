@@ -9,6 +9,7 @@ It is designed for the exact workflow where you want to focus on a markdown note
 - Global `Toggle focus mode` command
 - Works from any active pane, not only Excalidraw
 - Hides sidebars, ribbons, tab headers, status bar, and other panes
+- Optional toggle notifications in plugin settings
 - Cleans up automatically if the plugin is disabled or reloaded
 
 ## Local development
@@ -45,6 +46,8 @@ Run the command:
 - `Focus Mode: Toggle focus mode`
 
 Assign a hotkey in Obsidian if you want instant fullscreen-style focus from anywhere.
+
+If you want silent toggling, open `Settings -> Community plugins -> Focus Mode` and turn off `Show toggle notifications`.
 
 ## Notes
 

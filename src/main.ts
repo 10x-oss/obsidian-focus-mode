@@ -1,7 +1,15 @@
-import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from "obsidian";
 
 const HIDE_CLASS = "focus-mode-hidden";
 const SHOW_CLASS = "focus-mode-visible";
+
+interface FocusModeSettings {
+  showToggleNotices: boolean;
+}
+
+const DEFAULT_SETTINGS: FocusModeSettings = {
+  showToggleNotices: false,
+};
 
 export default class FocusModePlugin extends Plugin {
   private enabled = false;
@@ -9,9 +17,12 @@ export default class FocusModePlugin extends Plugin {
   private styleEl: HTMLStyleElement | null = null;
   private activeContentEl: HTMLElement | null = null;
   private activeDocument: Document | null = null;
+  private settings: FocusModeSettings = DEFAULT_SETTINGS;
 
   async onload(): Promise<void> {
+    await this.loadSettings();
     this.ensureStyles();
+    this.addSettingTab(new FocusModeSettingTab(this.app, this));
 
     this.addCommand({
       id: "toggle-focus-mode",
@@ -52,7 +63,7 @@ export default class FocusModePlugin extends Plugin {
   private toggleFocusMode(): void {
     if (this.enabled) {
       this.clearFocusMode();
-      new Notice("Focus Mode: restored the normal workspace.");
+      this.showToggleNotice("Focus Mode: restored the normal workspace.");
       return;
     }
 
@@ -72,7 +83,38 @@ export default class FocusModePlugin extends Plugin {
 
     this.enabled = true;
     this.activeLeaf = leaf;
-    new Notice("Focus Mode: now focusing the active pane.");
+    this.showToggleNotice("Focus Mode: now focusing the active pane.");
+  }
+
+  async loadSettings(): Promise<void> {
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...(await this.loadData()),
+    };
+  }
+
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
+  }
+
+  getSettings(): FocusModeSettings {
+    return this.settings;
+  }
+
+  async updateSettings(settings: Partial<FocusModeSettings>): Promise<void> {
+    this.settings = {
+      ...this.settings,
+      ...settings,
+    };
+    await this.saveSettings();
+  }
+
+  private showToggleNotice(message: string): void {
+    if (!this.settings.showToggleNotices) {
+      return;
+    }
+
+    new Notice(message);
   }
 
   private reapplyFocusMode(): void {
@@ -281,5 +323,25 @@ export default class FocusModePlugin extends Plugin {
     }
 
     return view.containerEl;
+  }
+}
+
+class FocusModeSettingTab extends PluginSettingTab {
+  constructor(app: App, private readonly plugin: FocusModePlugin) {
+    super(app, plugin);
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    new Setting(containerEl)
+      .setName("Show toggle notifications")
+      .setDesc("Show a notice when focus mode is enabled or disabled.")
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.getSettings().showToggleNotices).onChange(async (value) => {
+          await this.plugin.updateSettings({ showToggleNotices: value });
+        });
+      });
   }
 }

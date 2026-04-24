@@ -26,6 +26,9 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var HIDE_CLASS = "focus-mode-hidden";
 var SHOW_CLASS = "focus-mode-visible";
+var DEFAULT_SETTINGS = {
+  showToggleNotices: false
+};
 var FocusModePlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
@@ -34,9 +37,12 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     this.styleEl = null;
     this.activeContentEl = null;
     this.activeDocument = null;
+    this.settings = DEFAULT_SETTINGS;
   }
   async onload() {
+    await this.loadSettings();
     this.ensureStyles();
+    this.addSettingTab(new FocusModeSettingTab(this.app, this));
     this.addCommand({
       id: "toggle-focus-mode",
       name: "Toggle focus mode",
@@ -70,7 +76,7 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
   toggleFocusMode() {
     if (this.enabled) {
       this.clearFocusMode();
-      new import_obsidian.Notice("Focus Mode: restored the normal workspace.");
+      this.showToggleNotice("Focus Mode: restored the normal workspace.");
       return;
     }
     const leaf = this.app.workspace.activeLeaf;
@@ -85,7 +91,32 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     }
     this.enabled = true;
     this.activeLeaf = leaf;
-    new import_obsidian.Notice("Focus Mode: now focusing the active pane.");
+    this.showToggleNotice("Focus Mode: now focusing the active pane.");
+  }
+  async loadSettings() {
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...await this.loadData()
+    };
+  }
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+  getSettings() {
+    return this.settings;
+  }
+  async updateSettings(settings) {
+    this.settings = {
+      ...this.settings,
+      ...settings
+    };
+    await this.saveSettings();
+  }
+  showToggleNotice(message) {
+    if (!this.settings.showToggleNotices) {
+      return;
+    }
+    new import_obsidian.Notice(message);
   }
   reapplyFocusMode() {
     const leaf = this.getTargetLeaf();
@@ -236,5 +267,20 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
       return fallback;
     }
     return view.containerEl;
+  }
+};
+var FocusModeSettingTab = class extends import_obsidian.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new import_obsidian.Setting(containerEl).setName("Show toggle notifications").setDesc("Show a notice when focus mode is enabled or disabled.").addToggle((toggle) => {
+      toggle.setValue(this.plugin.getSettings().showToggleNotices).onChange(async (value) => {
+        await this.plugin.updateSettings({ showToggleNotices: value });
+      });
+    });
   }
 };
