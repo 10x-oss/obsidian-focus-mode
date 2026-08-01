@@ -169,6 +169,7 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     }
     this.enabled = true;
     this.activeLeaf = leaf;
+    this.hideNativeStatusBar();
     if (showNotice) {
       this.showToggleNotice("Focus Mode: now focusing the active pane.");
     }
@@ -282,6 +283,8 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     const applied = this.applyFocusMode(leaf);
     if (!applied) {
       this.clearFocusMode();
+    } else {
+      this.hideNativeStatusBar();
     }
   }
   getTargetLeaf() {
@@ -377,6 +380,32 @@ var FocusModePlugin = class extends import_obsidian.Plugin {
     this.enabled = false;
     this.activeLeaf = null;
     this.clearMarkedElements();
+    this.showNativeStatusBar();
+  }
+  getNativeStatusBar() {
+    const capacitor = window.Capacitor;
+    if (!capacitor || capacitor.getPlatform?.() === "web") {
+      return null;
+    }
+    return capacitor.Plugins?.StatusBar ?? null;
+  }
+  hideNativeStatusBar() {
+    const statusBar = this.getNativeStatusBar();
+    if (!statusBar) {
+      return;
+    }
+    void statusBar.hide().catch((error) => {
+      console.warn("Focus Mode: could not hide the native status bar.", error);
+    });
+  }
+  showNativeStatusBar() {
+    const statusBar = this.getNativeStatusBar();
+    if (!statusBar) {
+      return;
+    }
+    void statusBar.show().catch((error) => {
+      console.warn("Focus Mode: could not restore the native status bar.", error);
+    });
   }
   clearMarkedElements() {
     const ownerDocument = this.activeDocument ?? document;

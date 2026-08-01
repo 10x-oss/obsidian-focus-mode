@@ -12,6 +12,7 @@ It is designed for the exact workflow where you want to focus on a markdown note
 - Scrolling and long presses do not toggle the interface
 - Works from any active pane, not only Excalidraw
 - Hides sidebars, ribbons, tab headers, status bar, and other panes
+- On mobile, asks Obsidian's native bridge to hide the phone status bar while focused
 - Cleans up automatically if the plugin is disabled or reloaded
 
 ## Local development

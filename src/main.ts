@@ -36,6 +36,18 @@ interface EmbeddedPointerMessage {
   isPrimary: boolean;
 }
 
+interface NativeStatusBarPlugin {
+  hide(): Promise<void>;
+  show(options?: { animation?: string }): Promise<void>;
+}
+
+interface CapacitorBridge {
+  getPlatform?(): string;
+  Plugins?: {
+    StatusBar?: NativeStatusBarPlugin;
+  };
+}
+
 const DEFAULT_SETTINGS: FocusModeSettings = {
   showToggleNotices: false,
 };
@@ -134,6 +146,7 @@ export default class FocusModePlugin extends Plugin {
 
     this.enabled = true;
     this.activeLeaf = leaf;
+    this.hideNativeStatusBar();
     if (showNotice) {
       this.showToggleNotice("Focus Mode: now focusing the active pane.");
     }
@@ -356,6 +369,8 @@ export default class FocusModePlugin extends Plugin {
 
     if (!applied) {
       this.clearFocusMode();
+    } else {
+      this.hideNativeStatusBar();
     }
   }
 
@@ -489,6 +504,39 @@ export default class FocusModePlugin extends Plugin {
     this.enabled = false;
     this.activeLeaf = null;
     this.clearMarkedElements();
+    this.showNativeStatusBar();
+  }
+
+  private getNativeStatusBar(): NativeStatusBarPlugin | null {
+    const capacitor = (window as Window & { Capacitor?: CapacitorBridge }).Capacitor;
+
+    if (!capacitor || capacitor.getPlatform?.() === "web") {
+      return null;
+    }
+
+    return capacitor.Plugins?.StatusBar ?? null;
+  }
+
+  private hideNativeStatusBar(): void {
+    const statusBar = this.getNativeStatusBar();
+    if (!statusBar) {
+      return;
+    }
+
+    void statusBar.hide().catch((error: unknown) => {
+      console.warn("Focus Mode: could not hide the native status bar.", error);
+    });
+  }
+
+  private showNativeStatusBar(): void {
+    const statusBar = this.getNativeStatusBar();
+    if (!statusBar) {
+      return;
+    }
+
+    void statusBar.show().catch((error: unknown) => {
+      console.warn("Focus Mode: could not restore the native status bar.", error);
+    });
   }
 
   private clearMarkedElements(): void {
