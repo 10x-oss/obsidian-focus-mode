@@ -1,7 +1,44 @@
-import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
+import {
+  App,
+  Notice,
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  WorkspaceLeaf,
+} from "obsidian";
 
 const HIDE_CLASS = "focus-mode-hidden";
 const SHOW_CLASS = "focus-mode-visible";
+const EMBEDDED_POINTER_MESSAGE = "10x-focus-mode-pointer";
+const TAP_MAX_MOVEMENT_PX = 12;
+const TAP_MAX_DURATION_MS = 600;
+
+interface FocusModeSettings {
+  showToggleNotices: boolean;
+}
+
+interface TapGesture {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startedAt: number;
+  moved: boolean;
+  leaf: WorkspaceLeaf;
+}
+
+interface EmbeddedPointerMessage {
+  type: typeof EMBEDDED_POINTER_MESSAGE;
+  phase: "down" | "move" | "up" | "cancel";
+  pointerId: number;
+  x: number;
+  y: number;
+  button: number;
+  isPrimary: boolean;
+}
+
+const DEFAULT_SETTINGS: FocusModeSettings = {
+  showToggleNotices: false,
+};
 
 export default class FocusModePlugin extends Plugin {
   private enabled = false;
@@ -9,17 +46,27 @@ export default class FocusModePlugin extends Plugin {
   private styleEl: HTMLStyleElement | null = null;
   private activeContentEl: HTMLElement | null = null;
   private activeDocument: Document | null = null;
+  private tapGesture: TapGesture | null = null;
+  private settings = DEFAULT_SETTINGS;
 
   async onload(): Promise<void> {
+    await this.loadSettings();
     this.ensureStyles();
+    this.addSettingTab(new FocusModeSettingTab(this.app, this));
 
     this.addCommand({
       id: "toggle-focus-mode",
       name: "Toggle focus mode",
       callback: () => {
-        this.toggleFocusMode();
+        this.toggleFocusMode(true);
       },
     });
+
+    this.registerDomEvent(document, "pointerdown", this.handlePointerDown, true);
+    this.registerDomEvent(document, "pointermove", this.handlePointerMove, true);
+    this.registerDomEvent(document, "pointerup", this.handlePointerUp, true);
+    this.registerDomEvent(document, "pointercancel", this.handlePointerCancel, true);
+    this.registerDomEvent(window, "message", this.handleEmbeddedPointerMessage);
 
     this.registerEvent(
       this.app.workspace.on("layout-change", () => {
@@ -41,6 +88,15 @@ export default class FocusModePlugin extends Plugin {
         this.reapplyFocusMode();
       }),
     );
+
+    this.app.workspace.onLayoutReady(() => {
+      window.setTimeout(() => {
+        const leaf = this.app.workspace.activeLeaf;
+        if (leaf) {
+          this.enableFocusMode(leaf, false);
+        }
+      }, 0);
+    });
   }
 
   onunload(): void {
@@ -49,20 +105,26 @@ export default class FocusModePlugin extends Plugin {
     this.styleEl = null;
   }
 
-  private toggleFocusMode(): void {
+  private toggleFocusMode(showNotice: boolean, targetLeaf?: WorkspaceLeaf): void {
     if (this.enabled) {
       this.clearFocusMode();
-      new Notice("Focus Mode: restored the normal workspace.");
+      if (showNotice) {
+        this.showToggleNotice("Focus Mode: restored the normal workspace.");
+      }
       return;
     }
 
-    const leaf = this.app.workspace.activeLeaf;
+    const leaf = targetLeaf ?? this.app.workspace.activeLeaf;
 
     if (!leaf?.view?.containerEl) {
       new Notice("Focus Mode: there is no active pane to focus.");
       return;
     }
 
+    this.enableFocusMode(leaf, showNotice);
+  }
+
+  private enableFocusMode(leaf: WorkspaceLeaf, showNotice: boolean): void {
     const applied = this.applyFocusMode(leaf);
 
     if (!applied) {
@@ -72,7 +134,213 @@ export default class FocusModePlugin extends Plugin {
 
     this.enabled = true;
     this.activeLeaf = leaf;
-    new Notice("Focus Mode: now focusing the active pane.");
+    if (showNotice) {
+      this.showToggleNotice("Focus Mode: now focusing the active pane.");
+    }
+  }
+
+  private handlePointerDown = (event: PointerEvent): void => {
+    if (!event.isPrimary || event.button !== 0 || !this.isDocumentSurface(event.target)) {
+      this.tapGesture = null;
+      return;
+    }
+
+    const leaf = this.findLeafContaining(event.target);
+    if (!leaf) {
+      this.tapGesture = null;
+      return;
+    }
+
+    this.startTapGesture(event.pointerId, event.clientX, event.clientY, leaf);
+  };
+
+  private handlePointerMove = (event: PointerEvent): void => {
+    this.trackTapMovement(event.pointerId, event.clientX, event.clientY);
+  };
+
+  private handlePointerUp = (event: PointerEvent): void => {
+    if (!this.isDocumentSurface(event.target)) {
+      this.tapGesture = null;
+      return;
+    }
+
+    this.finishTapGesture(event.pointerId, event.clientX, event.clientY);
+  };
+
+  private handlePointerCancel = (): void => {
+    this.tapGesture = null;
+  };
+
+  private handleEmbeddedPointerMessage = (event: MessageEvent): void => {
+    const message = this.parseEmbeddedPointerMessage(event.data);
+    if (!message) {
+      return;
+    }
+
+    const frame = this.findFrameByWindow(event.source);
+    if (!frame) {
+      return;
+    }
+
+    const leaf = this.findLeafContaining(frame);
+    if (!leaf) {
+      return;
+    }
+
+    if (message.phase === "down") {
+      if (!message.isPrimary || message.button !== 0) {
+        this.tapGesture = null;
+        return;
+      }
+      this.startTapGesture(message.pointerId, message.x, message.y, leaf);
+      return;
+    }
+
+    if (message.phase === "move") {
+      this.trackTapMovement(message.pointerId, message.x, message.y);
+      return;
+    }
+
+    if (message.phase === "up") {
+      this.finishTapGesture(message.pointerId, message.x, message.y);
+      return;
+    }
+
+    this.tapGesture = null;
+  };
+
+  private startTapGesture(pointerId: number, x: number, y: number, leaf: WorkspaceLeaf): void {
+    this.tapGesture = {
+      pointerId,
+      startX: x,
+      startY: y,
+      startedAt: Date.now(),
+      moved: false,
+      leaf,
+    };
+  }
+
+  private trackTapMovement(pointerId: number, x: number, y: number): void {
+    const gesture = this.tapGesture;
+    if (!gesture || gesture.pointerId !== pointerId) {
+      return;
+    }
+
+    if (Math.hypot(x - gesture.startX, y - gesture.startY) > TAP_MAX_MOVEMENT_PX) {
+      gesture.moved = true;
+    }
+  }
+
+  private finishTapGesture(pointerId: number, x: number, y: number): void {
+    const gesture = this.tapGesture;
+    this.tapGesture = null;
+
+    if (!gesture || gesture.pointerId !== pointerId) {
+      return;
+    }
+
+    const moved = gesture.moved
+      || Math.hypot(x - gesture.startX, y - gesture.startY) > TAP_MAX_MOVEMENT_PX;
+    const heldTooLong = Date.now() - gesture.startedAt > TAP_MAX_DURATION_MS;
+
+    if (moved || heldTooLong) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (!gesture.leaf.view.containerEl.isConnected) {
+        return;
+      }
+
+      this.app.workspace.setActiveLeaf(gesture.leaf, { focus: true });
+      this.toggleFocusMode(false, gesture.leaf);
+    }, 0);
+  }
+
+  private isDocumentSurface(target: EventTarget | null): target is Element {
+    return target instanceof Element && target.closest(".view-content") !== null;
+  }
+
+  private findLeafContaining(target: EventTarget | null): WorkspaceLeaf | null {
+    if (!(target instanceof Node)) {
+      return null;
+    }
+
+    let match: WorkspaceLeaf | null = null;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (!match && leaf.view.containerEl.contains(target)) {
+        match = leaf;
+      }
+    });
+    return match;
+  }
+
+  private findFrameByWindow(source: MessageEventSource | null): HTMLIFrameElement | null {
+    if (!source) {
+      return null;
+    }
+
+    for (const frame of document.querySelectorAll(".view-content iframe")) {
+      if (frame instanceof HTMLIFrameElement && frame.contentWindow === source) {
+        return frame;
+      }
+    }
+    return null;
+  }
+
+  private parseEmbeddedPointerMessage(value: unknown): EmbeddedPointerMessage | null {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const message = value as Partial<EmbeddedPointerMessage>;
+    const validPhase = message.phase === "down"
+      || message.phase === "move"
+      || message.phase === "up"
+      || message.phase === "cancel";
+
+    if (
+      message.type !== EMBEDDED_POINTER_MESSAGE
+      || !validPhase
+      || typeof message.pointerId !== "number"
+      || typeof message.x !== "number"
+      || typeof message.y !== "number"
+      || typeof message.button !== "number"
+      || typeof message.isPrimary !== "boolean"
+    ) {
+      return null;
+    }
+
+    return message as EmbeddedPointerMessage;
+  }
+
+  private async loadSettings(): Promise<void> {
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...await this.loadData() as Partial<FocusModeSettings>,
+    };
+  }
+
+  private async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
+  }
+
+  getSettings(): FocusModeSettings {
+    return this.settings;
+  }
+
+  async updateSettings(settings: Partial<FocusModeSettings>): Promise<void> {
+    this.settings = {
+      ...this.settings,
+      ...settings,
+    };
+    await this.saveSettings();
+  }
+
+  private showToggleNotice(message: string): void {
+    if (this.settings.showToggleNotices) {
+      new Notice(message);
+    }
   }
 
   private reapplyFocusMode(): void {
@@ -281,5 +549,26 @@ export default class FocusModePlugin extends Plugin {
     }
 
     return view.containerEl;
+  }
+}
+
+class FocusModeSettingTab extends PluginSettingTab {
+  constructor(app: App, private readonly focusModePlugin: FocusModePlugin) {
+    super(app, focusModePlugin);
+  }
+
+  display(): void {
+    this.containerEl.empty();
+
+    new Setting(this.containerEl)
+      .setName("Show toggle notifications")
+      .setDesc("Show a notice when focus mode is enabled or disabled with the command.")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.focusModePlugin.getSettings().showToggleNotices)
+          .onChange(async (value) => {
+            await this.focusModePlugin.updateSettings({ showToggleNotices: value });
+          });
+      });
   }
 }

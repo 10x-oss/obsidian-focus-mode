@@ -1,9 +1,9 @@
 {
   "id": "focus-mode",
   "name": "Focus Mode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "1.5.0",
-  "description": "Toggle a distraction-free focus mode for the active pane from anywhere in Obsidian.",
+  "description": "Default to a distraction-free view and toggle Obsidian chrome by tapping the document.",
   "author": "10x",
   "authorUrl": "https://github.com/10x-oss",
   "isDesktopOnly": false

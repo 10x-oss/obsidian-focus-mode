@@ -1,7 +1,7 @@
 {
   "name": "obsidian-focus-mode",
-  "version": "0.1.0",
-  "description": "Obsidian plugin that toggles a distraction-free focus mode for the active pane.",
+  "version": "0.2.0",
+  "description": "Obsidian plugin that defaults to a distraction-free view and toggles chrome on document taps.",
   "main": "main.js",
   "scripts": {
     "build": "node esbuild.mjs",

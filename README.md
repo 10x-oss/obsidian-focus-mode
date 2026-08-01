@@ -7,6 +7,9 @@ It is designed for the exact workflow where you want to focus on a markdown note
 ## Features
 
 - Global `Toggle focus mode` command
+- Focus mode turns on automatically when the vault opens
+- Tap the document to reveal or hide the surrounding Obsidian interface
+- Scrolling and long presses do not toggle the interface
 - Works from any active pane, not only Excalidraw
 - Hides sidebars, ribbons, tab headers, status bar, and other panes
 - Cleans up automatically if the plugin is disabled or reloaded
@@ -14,7 +17,7 @@ It is designed for the exact workflow where you want to focus on a markdown note
 ## Local development
 
 ```bash
-cd /Users/10x/dev/projects/oss/obsidian-focus-mode
+cd /Users/10x/dev/oss/obsidian-focus-mode
 npm install
 npm run build
 ```
@@ -40,7 +43,7 @@ Then enable `Focus Mode` in `Settings -> Community plugins`.
 
 ## Usage
 
-Run the command:
+Focus mode starts automatically. Tap inside the document to reveal or hide the surrounding Obsidian interface. You can also run the command:
 
 - `Focus Mode: Toggle focus mode`
 
